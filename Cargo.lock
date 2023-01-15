@@ -55,6 +55,7 @@ name = "comic-book-roundup-scraper"
 version = "0.1.0"
 dependencies = [
  "fuzzy-matcher",
+ "fuzzywuzzy",
  "inquire",
  "levenshtein",
  "reqwest",
@@ -291,6 +292,12 @@ checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
 dependencies = [
  "thread_local",
 ]
+
+[[package]]
+name = "fuzzywuzzy"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c075dcf102b63d18ebeb6ee0e8680ca8ab06da01e73e45ff187f15ef18d50350"
 
 [[package]]
 name = "fxhash"

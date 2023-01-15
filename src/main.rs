@@ -1,7 +1,6 @@
 use core::result::Result;
-use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzywuzzy::fuzz;
 use inquire::{Select, Text};
-use levenshtein::levenshtein;
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
 
@@ -37,13 +36,7 @@ fn menu(items: &[String]) -> String {
 
 fn main() {
     loop {
-        match menu(&[
-            "Scrape publisher".into(),
-            "Do Nothing".into(),
-            "Exit!".into(),
-        ])
-        .as_str()
-        {
+        match menu(&["Scrape publisher".into(), "Exit!".into()]).as_str() {
             "Scrape publisher" => {
                 let publisher = Text::new("Enter your publisher:").prompt().unwrap();
                 let document = all_series_document(&publisher).unwrap();
@@ -61,21 +54,23 @@ fn main() {
                             Title::new(x.inner_html(), x.value().attr("href").unwrap().to_string())
                         })
                         .into_iter()
-                        .filter(|title| levenshtein(&title.name, &title_name) <= 7) // 2 is the threshold for similarity
+                        .filter(|title| fuzz::ratio(&title.name, &title_name) > 50) // 2 is the threshold for similarity
                         .collect();
 
-                    let titles_count = titles_vec.len();
-                    titles_vec
-                        .iter()
-                        .zip(1..titles_count + 1)
-                        .for_each(|(title, number)| {
-                            println!("{}. {}", number, serde_json::to_string(&title).unwrap())
-                        });
+                    match menu(titles_vec.iter().map(|x| x.name.clone()).collect::<Vec<String>>().as_slice()).as_str() {
+                        named_title => {
+                            let title = titles_vec
+                                .iter()
+                                .find(|title| title.name == named_title)
+                                .unwrap();
+                            println!("Title: {}", title.name);
+                            println!("URL: {}", title.url);
+                        }
+                        "Exit!" => break,
+                        _ => println!("default"),
+                    }
                     continue;
                 }
-            }
-            "Do Nothing" => {
-                continue;
             }
             "Exit!" => {
                 println!("Exiting CLI interface ...");
