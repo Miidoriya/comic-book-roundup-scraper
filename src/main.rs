@@ -34,42 +34,77 @@ fn menu(items: &[String]) -> String {
     Select::new("MENU", items.to_vec()).prompt().unwrap()
 }
 
+fn calculate_title_similarity(title_name: &str, title: &scraper::ElementRef) -> u32 {
+    fuzz::ratio(&title.inner_html(), &title_name).into()
+}
+
+fn find_titles(title_name: &str, titles: &[scraper::ElementRef]) -> Vec<Title> {
+    titles
+        .into_iter()
+        .filter(|title| calculate_title_similarity(title_name, title) > 50)
+        .map(|title| {
+            Title::new(
+                title.inner_html(),
+                title.value().attr("href").unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+fn print_title_info(title: &str, url: &str) {
+    println!("Title: {}", title);
+    println!("URL: {}", url);
+}
+
 fn main() {
     loop {
         match menu(&["Scrape publisher".into(), "Exit!".into()]).as_str() {
             "Scrape publisher" => {
                 let publisher = Text::new("Enter your publisher:").prompt().unwrap();
-                let document = all_series_document(&publisher).unwrap();
+                let document = match all_series_document(&publisher) {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        continue;
+                    }
+                };
 
-                let title_selector = scraper::Selector::parse("td.series>a").unwrap();
+                let title_selector = match scraper::Selector::parse("td.series>a") {
+                    Ok(selector) => selector,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        continue;
+                    }
+                };
 
                 loop {
                     let title_name = Text::new("Which title are you looking for?:")
                         .prompt()
                         .unwrap();
 
-                    let titles_vec: Vec<Title> = document
-                        .select(&title_selector)
-                        .map(|x| {
-                            Title::new(x.inner_html(), x.value().attr("href").unwrap().to_string())
-                        })
-                        .into_iter()
-                        .filter(|title| fuzz::ratio(&title.name, &title_name) > 50) // 2 is the threshold for similarity
-                        .collect();
+                    let titles = find_titles(
+                        &title_name,
+                        &document
+                            .select(&title_selector)
+                            .collect::<Vec<scraper::ElementRef>>(),
+                    );
 
-                    match menu(titles_vec.iter().map(|x| x.name.clone()).collect::<Vec<String>>().as_slice()).as_str() {
+                    match menu(
+                        &titles
+                            .iter()
+                            .map(|title| title.name.clone())
+                            .collect::<Vec<String>>(),
+                    )
+                    .as_str()
+                    {
                         named_title => {
-                            let title = titles_vec
+                            let title_info = titles
                                 .iter()
                                 .find(|title| title.name == named_title)
                                 .unwrap();
-                            println!("Title: {}", title.name);
-                            println!("URL: {}", title.url);
+                            print_title_info(&title_info.name, &title_info.url);
                         }
-                        "Exit!" => break,
-                        _ => println!("default"),
                     }
-                    continue;
                 }
             }
             "Exit!" => {
