@@ -21,7 +21,7 @@ fn menu(items: &[String]) -> String {
 
 fn main() {
     loop {
-        match menu(&["Scrape publisher".into(), "Do Nothing".into()]).as_str() {
+        match menu(&["Scrape publisher".into(), "Do Nothing".into(), "Exit!".into()]).as_str() {
             "Scrape publisher" => {
                 let publisher = Text::new("Enter your publisher:").prompt().unwrap();
                 let document = all_series_document(&publisher).unwrap();
@@ -43,6 +43,10 @@ fn main() {
             }
             "Do Nothing" => {
                 continue;
+            }
+            "Exit!" => {
+                println!("Exiting CLI interface ...");
+                break;
             }
             _ => println!("default"),
         }
