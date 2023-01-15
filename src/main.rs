@@ -10,9 +10,44 @@ struct Title {
     url: String,
 }
 
+struct Issue {
+    title: String,
+    issue_num: String,
+    writer: String,
+    artist: String,
+    user_review: String,
+    critic_review: String,
+    user_review_count: String,
+    critic_review_count: String,
+}
+
 impl Title {
     fn new(name: String, url: String) -> Self {
         Title { name, url }
+    }
+}
+
+impl Issue {
+    fn new(
+        title: String,
+        issue_num: String,
+        writer: String,
+        artist: String,
+        user_review: String,
+        critic_review: String,
+        user_review_count: String,
+        critic_review_count: String,
+    ) -> Self {
+        Issue {
+            title,
+            issue_num,
+            writer,
+            artist,
+            user_review,
+            critic_review,
+            user_review_count,
+            critic_review_count,
+        }
     }
 }
 
@@ -26,6 +61,12 @@ fn all_series_document(publisher: &str) -> Result<scraper::Html, Error> {
         "https://comicbookroundup.com/comic-books/reviews/{}/all-series",
         publisher
     );
+    let response = do_request(&url)?;
+    Ok(scraper::Html::parse_document(&response))
+}
+
+fn all_issues_document(series_url_string: &str) -> Result<scraper::Html, Error> {
+    let url = format!("https://comicbookroundup.com{}", series_url_string);
     let response = do_request(&url)?;
     Ok(scraper::Html::parse_document(&response))
 }
@@ -98,11 +139,59 @@ fn main() {
                     .as_str()
                     {
                         named_title => {
-                            let title_info = titles
+                            let title = titles
                                 .iter()
                                 .find(|title| title.name == named_title)
                                 .unwrap();
-                            print_title_info(&title_info.name, &title_info.url);
+                            let issue_document = match all_issues_document(&title.url) {
+                                Ok(doc) => doc,
+                                Err(e) => {
+                                    println!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+                            let issue_selector = match scraper::Selector::parse(
+                                "div.section > table > tbody > tr",
+                            ) {
+                                Ok(selector) => selector,
+                                Err(e) => {
+                                    println!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+
+                            let title_selector = match scraper::Selector::parse(
+                                ".rating .CriticRatingList div",
+                            ) {
+                                Ok(selector) => selector,
+                                Err(e) => {
+                                    println!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+
+                            let mut issues = issue_document
+                                .select(&issue_selector)
+                                .collect::<Vec<scraper::ElementRef>>();
+                            issues.drain(0..1);
+
+                            issues.iter().for_each(|issue| {;
+                                let title = issue.select(&title_selector).next().unwrap().inner_html();
+                                println!("{:?}", title);
+                            });
+                            // let formatted_issues = for ele in issues {
+                            //     Issue::new(title, issue_num, writer, artist, user_review, critic_review, user_review_count, critic_review_count)
+                            // };
+
+                            // for ele in issues {
+                            //     println!("{:?}", ele.inner_html());
+                            // }
+                            // let title_info = issues
+                            //     .iter()
+                            //     .map(|title| title.text());
+
+                            // title_info.for_each(|title| println!("{:?}", title));
+                            //println!("{:?}", title_info);
                         }
                     }
                 }
