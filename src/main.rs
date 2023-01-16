@@ -3,6 +3,37 @@ use fuzzywuzzy::fuzz;
 use inquire::{Select, Text};
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
+use scraper::error::SelectorErrorKind;
+
+#[derive(Debug)]
+enum PublisherError<'a> {
+    RequestError(reqwest::Error),
+    SelectorError(SelectorErrorKind<'a>)
+}
+
+impl<'a> From<reqwest::Error> for PublisherError<'a> {
+    fn from(error: reqwest::Error) -> Self {
+        PublisherError::RequestError(error)
+    }
+}
+
+impl<'a> From<SelectorErrorKind<'a>> for PublisherError<'a> {
+    fn from(error: SelectorErrorKind<'a>) -> Self {
+        PublisherError::SelectorError(error)
+    }
+}
+
+#[derive(Debug)]
+struct Publisher {
+    name: String,
+    url: String,
+}
+
+impl Publisher {
+    fn new(name: String, url: String) -> Self {
+        Publisher { name, url }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Title {
@@ -60,6 +91,27 @@ fn do_request(url: &str) -> Result<String, Error> {
     response.text()
 }
 
+fn get_publishers() -> Result<Vec<Publisher>, PublisherError<'static>> {
+    let url = "https://comicbookroundup.com/comic-books/reviews";
+    let response = do_request(&url)?;
+    let parsed_response = scraper::Html::parse_document(&response);
+    let publisher_selector = scraper::Selector::parse("div.section > table > tbody > tr .top-publisher a")?;
+    let publishers = parsed_response.select(&publisher_selector).collect::<Vec<scraper::ElementRef>>();
+    let publishers_vec = publishers.iter().map(|publisher| {
+        let publisher_elem = match publisher.value().attr("href") {
+            Some(href) => href,
+            None => {
+                println!("Error: {:?}", publisher);
+                return Publisher::new("".to_string(), "".to_string()); // How can we handle this better?
+            }
+        };
+        let publisher_url = format!("https://comicbookroundup.com{}",publisher_elem);
+        let publisher = Publisher::new(publisher_elem.split("/").last().unwrap().to_string(), publisher_url);
+        publisher
+    }).collect::<Vec<Publisher>>();
+    Ok(publishers_vec)
+}
+
 fn all_series_document(publisher: &str) -> Result<scraper::Html, Error> {
     let url = format!(
         "https://comicbookroundup.com/comic-books/reviews/{}/all-series",
@@ -75,8 +127,8 @@ fn all_issues_document(series_url_string: &str) -> Result<scraper::Html, Error> 
     Ok(scraper::Html::parse_document(&response))
 }
 
-fn menu(items: &[String]) -> String {
-    Select::new("MENU", items.to_vec()).prompt().unwrap()
+fn menu(items: &[String], msg: String) -> String {
+    Select::new(&msg, items.to_vec()).prompt().unwrap()
 }
 
 fn calculate_title_similarity(title_name: &str, title: &scraper::ElementRef) -> u32 {
@@ -103,8 +155,20 @@ fn print_title_info(title: &str, url: &str) {
 
 fn main() {
     loop {
-        match menu(&["Scrape publisher".into(), "Exit!".into()]).as_str() {
+        match menu(&["Scrape publisher".into(), "Exit!".into()], "MENU".to_owned()).as_str() {
             "Scrape publisher" => {
+                // create a match menu which iterates over the get_publisher() function names
+                let publishers = get_publishers().unwrap();
+                match menu(publishers.iter().map(|publisher| publisher.name.clone()).collect::<Vec<String>>().as_slice(),"Which publisher would you like to scrape?".to_owned()).as_str() {
+                    publisher => {
+                        publishers
+                        .iter()
+                        .find(|title| title.name == publisher)
+                        .unwrap();
+                    }
+                }
+
+                
                 let publisher = Text::new("Enter your publisher:").prompt().unwrap();
                 let document = match all_series_document(&publisher) {
                     Ok(doc) => doc,
@@ -138,7 +202,7 @@ fn main() {
                         &titles
                             .iter()
                             .map(|title| title.name.clone())
-                            .collect::<Vec<String>>(),
+                            .collect::<Vec<String>>(),"MENU".to_owned()
                     )
                     .as_str()
                     {
