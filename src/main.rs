@@ -2,13 +2,13 @@ use core::result::Result;
 use fuzzywuzzy::fuzz;
 use inquire::{Select, Text};
 use reqwest::Error;
+use scraper::{error::SelectorErrorKind, Html};
 use serde::{Deserialize, Serialize};
-use scraper::error::SelectorErrorKind;
 
 #[derive(Debug)]
 enum PublisherError<'a> {
     RequestError(reqwest::Error),
-    SelectorError(SelectorErrorKind<'a>)
+    SelectorError(SelectorErrorKind<'a>),
 }
 
 impl<'a> From<reqwest::Error> for PublisherError<'a> {
@@ -86,6 +86,10 @@ impl Issue {
     }
 }
 
+fn create_selector(selector_string: &str) -> scraper::Selector {
+    scraper::Selector::parse(selector_string).unwrap()
+}
+
 fn do_request(url: &str) -> Result<String, Error> {
     let response = reqwest::blocking::get(url)?;
     response.text()
@@ -95,30 +99,30 @@ fn get_publishers() -> Result<Vec<Publisher>, PublisherError<'static>> {
     let url = "https://comicbookroundup.com/comic-books/reviews";
     let response = do_request(&url)?;
     let parsed_response = scraper::Html::parse_document(&response);
-    let publisher_selector = scraper::Selector::parse("div.section > table > tbody > tr .top-publisher a")?;
-    let publishers = parsed_response.select(&publisher_selector).collect::<Vec<scraper::ElementRef>>();
-    let publishers_vec = publishers.iter().map(|publisher| {
-        let publisher_elem = match publisher.value().attr("href") {
-            Some(href) => href,
-            None => {
-                println!("Error: {:?}", publisher);
-                return Publisher::new("".to_string(), "".to_string()); // How can we handle this better?
-            }
-        };
-        let publisher_url = format!("https://comicbookroundup.com{}",publisher_elem);
-        let publisher = Publisher::new(publisher_elem.split("/").last().unwrap().to_string(), publisher_url);
-        publisher
-    }).collect::<Vec<Publisher>>();
+    let publisher_selector =
+        scraper::Selector::parse("div.section > table > tbody > tr .top-publisher a")?;
+    let publishers = parsed_response
+        .select(&publisher_selector)
+        .collect::<Vec<scraper::ElementRef>>();
+    let publishers_vec = publishers
+        .iter()
+        .map(|publisher| {
+            let publisher_elem = match publisher.value().attr("href") {
+                Some(href) => href,
+                None => {
+                    println!("Error: {:?}", publisher);
+                    return Publisher::new("".to_string(), "".to_string()); // How can we handle this better?
+                }
+            };
+            let publisher_url = format!("https://comicbookroundup.com{}/{}", publisher_elem, "all-series");
+            let publisher = Publisher::new(
+                publisher_elem.split("/").last().unwrap().to_string(),
+                publisher_url,
+            );
+            publisher
+        })
+        .collect::<Vec<Publisher>>();
     Ok(publishers_vec)
-}
-
-fn all_series_document(publisher: &str) -> Result<scraper::Html, Error> {
-    let url = format!(
-        "https://comicbookroundup.com/comic-books/reviews/{}/all-series",
-        publisher
-    );
-    let response = do_request(&url)?;
-    Ok(scraper::Html::parse_document(&response))
 }
 
 fn all_issues_document(series_url_string: &str) -> Result<scraper::Html, Error> {
@@ -148,225 +152,159 @@ fn find_titles(title_name: &str, titles: &[scraper::ElementRef]) -> Vec<Title> {
         .collect()
 }
 
-fn print_title_info(title: &str, url: &str) {
-    println!("Title: {}", title);
-    println!("URL: {}", url);
-}
-
 fn main() {
     loop {
-        match menu(&["Scrape publisher".into(), "Exit!".into()], "MENU".to_owned()).as_str() {
+        match menu(
+            &["Scrape publisher".into(), "Exit!".into()],
+            "MENU".to_owned(),
+        )
+        .as_str()
+        {
             "Scrape publisher" => {
-                // create a match menu which iterates over the get_publisher() function names
                 let publishers = get_publishers().unwrap();
-                match menu(publishers.iter().map(|publisher| publisher.name.clone()).collect::<Vec<String>>().as_slice(),"Which publisher would you like to scrape?".to_owned()).as_str() {
-                    publisher => {
-                        publishers
-                        .iter()
-                        .find(|title| title.name == publisher)
-                        .unwrap();
-                    }
-                }
-
-                
-                let publisher = Text::new("Enter your publisher:").prompt().unwrap();
-                let document = match all_series_document(&publisher) {
-                    Ok(doc) => doc,
-                    Err(e) => {
-                        println!("Error: {}", e);
-                        continue;
-                    }
-                };
-
-                let title_selector = match scraper::Selector::parse("td.series>a") {
-                    Ok(selector) => selector,
-                    Err(e) => {
-                        println!("Error: {}", e);
-                        continue;
-                    }
-                };
-
+                let mut publisher_names = publishers
+                    .iter()
+                    .map(|publisher| publisher.name.clone())
+                    .collect::<Vec<String>>();
+                publisher_names.push("Exit!".to_string());
                 loop {
-                    let title_name = Text::new("Which title are you looking for?:")
-                        .prompt()
-                        .unwrap();
-
-                    let titles = find_titles(
-                        &title_name,
-                        &document
-                            .select(&title_selector)
-                            .collect::<Vec<scraper::ElementRef>>(),
-                    );
-
                     match menu(
-                        &titles
-                            .iter()
-                            .map(|title| title.name.clone())
-                            .collect::<Vec<String>>(),"MENU".to_owned()
+                        publisher_names.as_slice(),
+                        "Which publisher would you like to scrape?".to_owned(),
                     )
                     .as_str()
                     {
-                        named_title => {
-                            let title = titles
-                                .iter()
-                                .find(|title| title.name == named_title)
+                        "Exit!" => break,
+                        publisher => {
+                            let current_publisher = publishers.iter().find(|publisher_obj| publisher_obj.name == publisher).unwrap();
+                            println!("Scraping publisher: {}", current_publisher.url);
+                            let publisher_doc = do_request(&current_publisher.url).unwrap();
+                            let publisher_parsed: Result<Html, Error> = Ok(scraper::Html::parse_document(&publisher_doc));
+                            let document = match publisher_parsed {
+                                Ok(document) => document,
+                                Err(e) => {
+                                    println!("Error: {}", e);
+                                    continue;
+                                }};
+                            let title_name = Text::new("Which title are you looking for?:")
+                                .prompt()
                                 .unwrap();
-                            let issue_document = match all_issues_document(&title.url) {
-                                Ok(doc) => doc,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-                            let issue_selector = match scraper::Selector::parse(
-                                "div.section > table > tbody > tr",
-                            ) {
+                            let title_selector = match scraper::Selector::parse("td.series>a") {
                                 Ok(selector) => selector,
                                 Err(e) => {
                                     println!("Error: {}", e);
                                     continue;
                                 }
                             };
-
-                            let critic_rating = match scraper::Selector::parse(
-                                ".rating .CriticRatingList div",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
+                            let titles = find_titles(
+                                &title_name,
+                                &document
+                                    .select(&title_selector)
+                                    .collect::<Vec<scraper::ElementRef>>(),
+                            );
+                            match menu(
+                                &titles
+                                    .iter()
+                                    .map(|title| title.name.clone())
+                                    .collect::<Vec<String>>(),
+                                format!("Which {} comic would you like to scrape?", &title_name),
+                            )
+                            .as_str()
+                            {
+                                named_title => {
+                                    let title = titles
+                                        .iter()
+                                        .find(|title| title.name == named_title)
+                                        .unwrap();
+                                    let document = match all_issues_document(&title.url) {
+                                        Ok(doc) => doc,
+                                        Err(e) => {
+                                            println!("Error: {}", e);
+                                            continue;
+                                        }
+                                    };
+                                    let issue_selector =
+                                        create_selector("div.section > table > tbody > tr");
+                                    let mut issues = document
+                                        .select(&issue_selector)
+                                        .collect::<Vec<scraper::ElementRef>>();
+                                    issues.drain(0..1);
+                                    let critic_rating_selector =
+                                        create_selector(".rating .CriticRatingList div");
+                                    let user_rating_selector =
+                                        create_selector(".rating .UserRatingList div");
+                                    let critic_reviews_count_selector =
+                                        create_selector(".reviews .CriticReviewNumList a");
+                                    let user_reviews_count_selector =
+                                        create_selector(".reviews .UserReviewNumList a");
+                                    let issue_number_selector = create_selector(".issue a");
+                                    let url_selector = create_selector(".issue a");
+                                    let writer = create_selector(".writer a");
+                                    let artist = create_selector(".artist a");
+                                    let issues = issues.iter().map(|issue| {
+                                        let title = named_title.to_string();
+                                        let issue_num =
+                                            match issue.select(&issue_number_selector).next() {
+                                                Some(issue_num) => issue_num.inner_html(),
+                                                None => "N/A".to_string(),
+                                            };
+                                        let url = match issue.select(&url_selector).next() {
+                                            Some(url) => {
+                                                url.value().attr("href").unwrap().to_string()
+                                            }
+                                            None => "N/A".to_string(),
+                                        };
+                                        let writer = match issue.select(&writer).next() {
+                                            Some(writer) => writer.inner_html(),
+                                            None => "N/A".to_string(),
+                                        };
+                                        let artist = match issue.select(&artist).next() {
+                                            Some(artist) => artist.inner_html(),
+                                            None => "N/A".to_string(),
+                                        };
+                                        let critic_review =
+                                            match issue.select(&critic_rating_selector).next() {
+                                                Some(critic_rating) => critic_rating.inner_html(),
+                                                None => "N/A".to_string(),
+                                            };
+                                        let user_review =
+                                            match issue.select(&user_rating_selector).next() {
+                                                Some(user_rating) => user_rating.inner_html(),
+                                                None => "N/A".to_string(),
+                                            };
+                                        let critic_review_count = match issue
+                                            .select(&critic_reviews_count_selector)
+                                            .next()
+                                        {
+                                            Some(critic_reviews_count) => {
+                                                critic_reviews_count.inner_html()
+                                            }
+                                            None => "N/A".to_string(),
+                                        };
+                                        let user_review_count =
+                                            match issue.select(&user_reviews_count_selector).next()
+                                            {
+                                                Some(user_reviews_count) => {
+                                                    user_reviews_count.inner_html()
+                                                }
+                                                None => "N/A".to_string(),
+                                            };
+                                        let issue = Issue::new(
+                                            title,
+                                            issue_num,
+                                            url,
+                                            writer,
+                                            artist,
+                                            user_review,
+                                            critic_review,
+                                            user_review_count,
+                                            critic_review_count,
+                                        );
+                                        issue
+                                    });
+                                    issues.for_each(|issue| println!("{:?}", issue));
                                 }
-                            };
-
-                            let user_rating = match scraper::Selector::parse(
-                                ".rating .UserRatingList div",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-                            let writer = match scraper::Selector::parse(
-                                ".writer a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let artist = match scraper::Selector::parse(
-                                ".artist a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let user_review_count = match scraper::Selector::parse(
-                                ".reviews .UserReviewNumList a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let critic_review_count = match scraper::Selector::parse(
-                                ".reviews .CriticReviewNumList a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-                            
-                            let issue_num = match scraper::Selector::parse(
-                                ".issue a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let url = match scraper::Selector::parse(
-                                ".issue a",
-                            ) {
-                                Ok(selector) => selector,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let mut issues = issue_document
-                                .select(&issue_selector)
-                                .collect::<Vec<scraper::ElementRef>>();
-                            issues.drain(0..1);
-
-                            let issues = issues.iter().map(|issue| {
-                                let title = named_title;
-                                let issue_num = match issue.select(&issue_num).next() {
-                                    Some(issue_num) => issue_num.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let writer = match issue.select(&writer).next() {
-                                    Some(writer) => writer.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let artist = match issue.select(&artist).next() {
-                                    Some(artist) => artist.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let user_review = match issue.select(&user_rating).next() {
-                                    Some(user_review) => user_review.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let critic_review = match issue.select(&critic_rating).next() {
-                                    Some(critic_review) => critic_review.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let user_review_count = match issue.select(&user_review_count).next() {
-                                    Some(user_review_count) => user_review_count.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let critic_review_count = match issue.select(&critic_review_count).next() {
-                                    Some(critic_review_count) => critic_review_count.inner_html(),
-                                    None => "N/A".to_string(),
-                                };
-                                let url = match issue.select(&url).next() {
-                                    Some(url) => url.value().attr("href").unwrap().to_string(),
-                                    None => "N/A".to_string(),
-                                };
-
-
-
-                                let issue = Issue::new(title.to_string(), issue_num, url, writer, artist, user_review, critic_review, user_review_count, critic_review_count);
-                                issue
-                            });
-
-                            issues.for_each(|issue| println!("{:?}", issue));
-                            // let formatted_issues = for ele in issues {
-                            //     Issue::new(title, issue_num, writer, artist, user_review, critic_review, user_review_count, critic_review_count)
-                            // };
-
-                            // for ele in issues {
-                            //     println!("{:?}", ele.inner_html());
-                            // }
-                            // let title_info = issues
-                            //     .iter()
-                            //     .map(|title| title.text());
-
-                            // title_info.for_each(|title| println!("{:?}", title));
-                            //println!("{:?}", title_info);
+                            }
                         }
                     }
                 }
