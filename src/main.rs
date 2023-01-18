@@ -244,7 +244,6 @@ fn main() {
                                     let user_reviews_count_selector =
                                         create_selector(".reviews .UserReviewNumList a");
                                     let issue_number_selector = create_selector(".issue a");
-                                    let url_selector = create_selector(".issue a");
                                     let writer = create_selector(".writer a");
                                     let artist = create_selector(".artist a");
                                     let issues = issues.iter().map(|issue| {
@@ -302,7 +301,10 @@ fn main() {
                                         issue
                                     });
                                     let table = issues.collect::<Vec<Issue>>();
-                                    print_stdout(table.with_title());
+                                    match print_stdout(table.with_title()) {
+                                        Ok(_) => println!("Success!"),
+                                        Err(e) => println!("Error: {}", e),
+                                    }
                                 }
                             }
                         }
