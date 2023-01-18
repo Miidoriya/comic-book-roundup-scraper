@@ -4,6 +4,7 @@ use inquire::{Select, Text};
 use reqwest::Error;
 use scraper::{error::SelectorErrorKind, Html};
 use serde::{Deserialize, Serialize};
+use cli_table::{format::Justify, print_stdout, Table, WithTitle};
 
 #[derive(Debug)]
 enum PublisherError<'a> {
@@ -41,16 +42,23 @@ struct Title {
     url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Table)]
 struct Issue {
+    #[table(title = "Title", justify = "Justify::Right")]
     title: String,
+    #[table(title = "Issue Number")]
     issue_num: String,
-    url: String,
+    #[table(title = "Writer/s")]
     writer: String,
+    #[table(title = "Artist/s")]
     artist: String,
+    #[table(title = "User Review Score")]
     user_review: String,
+    #[table(title = "Critic Review Score")]
     critic_review: String,
+    #[table(title = "User Review Count")]
     user_review_count: String,
+    #[table(title = "Critic Review Count")]
     critic_review_count: String,
 }
 
@@ -64,7 +72,6 @@ impl Issue {
     fn new(
         title: String,
         issue_num: String,
-        url: String,
         writer: String,
         artist: String,
         user_review: String,
@@ -75,7 +82,6 @@ impl Issue {
         Issue {
             title,
             issue_num,
-            url,
             writer,
             artist,
             user_review,
@@ -248,12 +254,6 @@ fn main() {
                                                 Some(issue_num) => issue_num.inner_html(),
                                                 None => "N/A".to_string(),
                                             };
-                                        let url = match issue.select(&url_selector).next() {
-                                            Some(url) => {
-                                                url.value().attr("href").unwrap().to_string()
-                                            }
-                                            None => "N/A".to_string(),
-                                        };
                                         let writer = match issue.select(&writer).next() {
                                             Some(writer) => writer.inner_html(),
                                             None => "N/A".to_string(),
@@ -292,7 +292,6 @@ fn main() {
                                         let issue = Issue::new(
                                             title,
                                             issue_num,
-                                            url,
                                             writer,
                                             artist,
                                             user_review,
@@ -302,7 +301,8 @@ fn main() {
                                         );
                                         issue
                                     });
-                                    issues.for_each(|issue| println!("{:?}", issue));
+                                    let table = issues.collect::<Vec<Issue>>();
+                                    print_stdout(table.with_title());
                                 }
                             }
                         }
