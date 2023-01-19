@@ -97,6 +97,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cli-table",
+ "ego-tree",
  "fuzzy-matcher",
  "fuzzywuzzy",
  "inquire",
@@ -105,6 +106,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "thread",
 ]
 
 [[package]]
@@ -1410,6 +1412,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "thread"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afe9c0e959dd1e7b871071b51bc674380d1889cd4fed9f4b3b1f5c1772d9f796"
 
 [[package]]
 name = "thread_local"
