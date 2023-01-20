@@ -1,5 +1,4 @@
-# comic-book-roundup-scraper
-
+# comic-book-roundup-scraper (WIP)
 Example usage (Created using terminalizer): 
 ![](https://github.com/Miidoriya/comic-book-roundup-scraper/blob/main/usage.gif)
 
